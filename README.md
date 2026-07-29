@@ -108,6 +108,55 @@ The target OU dropdown auto-populates from OUs matching `*offboard*`, `*disabled
 | `-AutoInstallModules` | off | Installs missing modules without prompting |
 | `-SkipModuleCheck` | off | Skips the startup check entirely |
 
+### Desktop shortcut
+
+Most technicians should launch this from a shortcut rather than a console. Create one per workstation:
+
+```powershell
+$Root = 'C:\Tools\ad-offboarding-tool'          # where the repo lives
+$OU   = 'OU=Offboarding,OU=Users,DC=example,DC=com'
+$Path = "$env:PUBLIC\Desktop\User Offboarding.lnk"
+
+$shell = New-Object -ComObject WScript.Shell
+$lnk = $shell.CreateShortcut($Path)
+$lnk.TargetPath       = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$lnk.Arguments        = '-sta -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden ' +
+                        "-File `"$Root\Offboarding-GUI.ps1`" -DefaultOffboardOU `"$OU`""
+$lnk.WorkingDirectory = $Root
+$lnk.IconLocation     = "$env:SystemRoot\System32\imageres.dll,77"
+$lnk.Description      = 'AD offboarding tool'
+$lnk.Save()
+```
+
+Optionally flag it to always elevate — needed if modules still have to install to `AllUsers`:
+
+```powershell
+$bytes = [System.IO.File]::ReadAllBytes($Path)
+$bytes[0x15] = $bytes[0x15] -bor 0x20      # set the RunAsAdministrator bit
+[System.IO.File]::WriteAllBytes($Path, $bytes)
+```
+
+**Manual equivalent** — right-click the desktop → **New → Shortcut**, and for the location paste:
+
+```
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -sta -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Tools\ad-offboarding-tool\Offboarding-GUI.ps1"
+```
+
+Then **Properties → Shortcut → Advanced → Run as administrator** if you want elevation, and **Change Icon** to point at something recognisable.
+
+Argument notes:
+
+| Switch | Why |
+|---|---|
+| `-sta` | Required for the Copy button. Pass it explicitly rather than relying on host defaults. |
+| `-NoProfile` | Skips user profile load — faster start, and avoids a profile-loaded module version conflicting with Graph or EXO. |
+| `-WindowStyle Hidden` | Hides the console so only the form is visible. |
+| `-ExecutionPolicy Bypass` | Per-process only; does not change machine policy. |
+
+> With `-WindowStyle Hidden`, anything that tries to prompt on the console is invisible and looks like a hang. The module bootstrap is written to be fully non-interactive for exactly this reason — if you add steps that prompt, drop the switch while testing them.
+
+**Fleet deployment:** drop the `.lnk` in `%ProgramData%\Microsoft\Windows\Start Menu\Programs` to put it in every user's Start menu, and add `-AutoInstallModules` to the arguments so first launch resolves dependencies without a prompt. Keep the total `Arguments` string under 260 characters — longer values get truncated.
+
 ### Headless
 
 ```powershell
